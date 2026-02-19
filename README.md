@@ -51,6 +51,16 @@ Outputs:
 - `dist/macKinect-<timestamp>.zip`
 - `dist/macKinect-<timestamp>.dmg` (when DMG creation is available)
 
+Installer package:
+
+```bash
+./package-installer.sh
+```
+
+Output:
+
+- `dist/macKinect-Installer-<timestamp>.pkg`
+
 ## System Integration
 
 In app: **System Integration -> Install System Integration**.
