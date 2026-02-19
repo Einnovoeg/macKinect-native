@@ -1,0 +1,12 @@
+build/
+build-*/
+build_*/
+build*/
+dist/
+.DS_Store
+*.log
+*.app
+*.dmg
+*.zip
+kinect-gui-app
+kinect-gui-app-fixed

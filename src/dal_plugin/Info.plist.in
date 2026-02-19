@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>English</string>
+  <key>CFBundleExecutable</key>
+  <string>@KINECT_DAL_EXECUTABLE_NAME@</string>
+  <key>CFBundleIdentifier</key>
+  <string>@KINECT_DAL_BUNDLE_ID@</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>KinectCameraDAL</string>
+  <key>CFBundlePackageType</key>
+  <string>BNDL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@KINECT_DAL_BUNDLE_VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@KINECT_DAL_BUNDLE_VERSION@</string>
+
+  <key>CFPlugInDynamicRegistration</key>
+  <false/>
+  <key>CFPlugInFactories</key>
+  <dict>
+    <key>6B1FA4A6-1B23-4B14-943A-64952CFD62A1</key>
+    <string>KinectCameraDALPluginMain</string>
+  </dict>
+  <key>CFPlugInTypes</key>
+  <dict>
+    <key>30010C1C-93BF-11D8-8B5B-000A95AF9C6A</key>
+    <array>
+      <string>6B1FA4A6-1B23-4B14-943A-64952CFD62A1</string>
+    </array>
+  </dict>
+</dict>
+</plist>
