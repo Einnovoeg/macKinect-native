@@ -75,3 +75,8 @@ Or from Terminal:
 
 - Kinect v1 microphone requires `audios.bin` firmware.
 - Kinect v2 requires stable USB 3 and external power.
+
+## Contributors And Credits
+
+- Contributors: `CONTRIBUTORS.md`
+- Third-party notices and source credits: `THIRD_PARTY_NOTICES.md`
