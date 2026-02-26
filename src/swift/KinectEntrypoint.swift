@@ -1,5 +1,4 @@
 import Foundation
-import CoreGraphics
 import Darwin
 
 private enum BackendChoice {
@@ -10,7 +9,6 @@ private enum BackendChoice {
 
 private struct CliOptions {
     var runGui = true
-    var launchServicesTokenSeen = false
     var showHelp = false
     var listDevices = false
     var runPreview = false
@@ -62,12 +60,6 @@ private func parseOptions(arguments: [String]) -> CliOptions? {
 
     while i < arguments.count {
         let arg = arguments[i]
-
-        if arg.hasPrefix("-psn_") {
-            options.launchServicesTokenSeen = true
-            i += 1
-            continue
-        }
 
         if arg == "--help" || arg == "-h" {
             options.showHelp = true
@@ -220,19 +212,6 @@ private func runCli(options: CliOptions) -> Int32 {
     return 0
 }
 
-private func hasGuiSession() -> Bool {
-    guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else {
-        return false
-    }
-    let onConsole = (session["kCGSessionOnConsoleKey"] as? Bool)
-        ?? (session["kCGSessionOnConsoleKey"] as? NSNumber)?.boolValue
-        ?? false
-    let loginDone = (session["kCGSessionLoginDoneKey"] as? Bool)
-        ?? (session["kCGSessionLoginDoneKey"] as? NSNumber)?.boolValue
-        ?? false
-    return onConsole && loginDone
-}
-
 private func resolveLaunchMode() -> Int32? {
     let program = (CommandLine.arguments.first as NSString?)?.lastPathComponent ?? "macKinect"
     let args = Array(CommandLine.arguments.dropFirst())
@@ -248,16 +227,6 @@ private func resolveLaunchMode() -> Int32? {
 
     if !options.runGui {
         return runCli(options: options)
-    }
-
-    if !options.launchServicesTokenSeen {
-        eprintln("GUI launch requires LaunchServices. Use 'open macKinect.app' (or run --list/--preview for CLI mode).")
-        return 2
-    }
-
-    if !hasGuiSession() {
-        eprintln("No active GUI session detected. Use --list/--preview for CLI mode or launch with 'open macKinect.app'.")
-        return 2
     }
 
     return nil

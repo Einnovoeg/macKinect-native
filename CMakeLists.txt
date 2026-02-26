@@ -276,12 +276,16 @@ if(CMAKE_Swift_COMPILER)
         src/swift/KinectApp.swift
         src/swift/ContentView.swift
         src/swift/KinectManager.swift
+        src/swift/PreviewMovieRecorder.swift
     )
     
     set(BRIDGE_SOURCES
         src/bridge/KinectBridge.mm
         src/backends/freenect_v1_backend.cpp
         src/backends/freenect_v2_backend.cpp
+    )
+    set_source_files_properties(src/bridge/KinectBridge.mm PROPERTIES
+        COMPILE_OPTIONS "-fobjc-arc"
     )
 
     add_executable(macKinect
@@ -319,6 +323,11 @@ if(CMAKE_Swift_COMPILER)
         "-framework Foundation"
         "-framework AppKit"
         "-framework SwiftUI"
+        "-framework AVFoundation"
+        "-framework CoreMedia"
+        "-framework CoreVideo"
+        "-framework ImageIO"
+        "-framework UniformTypeIdentifiers"
     )
 
     target_compile_options(macKinect PRIVATE

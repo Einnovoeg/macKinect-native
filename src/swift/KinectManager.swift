@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import AppKit
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 
 enum KinectStreamType: Int, CaseIterable, Identifiable {
     case rgb = 0
@@ -14,6 +17,83 @@ enum KinectStreamType: Int, CaseIterable, Identifiable {
         case .rgb: return "RGB"
         case .ir: return "Infrared"
         case .depth: return "Depth"
+        }
+    }
+
+    var fileNameComponent: String {
+        switch self {
+        case .rgb: return "rgb"
+        case .ir: return "infrared"
+        case .depth: return "depth"
+        }
+    }
+}
+
+enum StillImageFormat: String, CaseIterable, Identifiable {
+    case jpeg
+    case png
+    case tiff
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .jpeg: return "JPEG"
+        case .png: return "PNG"
+        case .tiff: return "TIFF"
+        }
+    }
+
+    var fileExtension: String {
+        switch self {
+        case .jpeg: return "jpg"
+        case .png: return "png"
+        case .tiff: return "tiff"
+        }
+    }
+
+    var utType: UTType {
+        switch self {
+        case .jpeg: return .jpeg
+        case .png: return .png
+        case .tiff: return .tiff
+        }
+    }
+
+    var supportsQuality: Bool {
+        switch self {
+        case .jpeg:
+            return true
+        case .png, .tiff:
+            return false
+        }
+    }
+}
+
+enum VideoQualityPreset: String, CaseIterable, Identifiable {
+    case low
+    case medium
+    case high
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        }
+    }
+
+    func averageBitRate(width: Int, height: Int) -> Int {
+        let pixels = max(width * height, 320 * 240)
+        switch self {
+        case .low:
+            return max(700_000, Int(Double(pixels) * 1.8))
+        case .medium:
+            return max(2_000_000, Int(Double(pixels) * 4.0))
+        case .high:
+            return max(6_000_000, Int(Double(pixels) * 9.0))
         }
     }
 }
@@ -52,6 +132,7 @@ final class KinectManager: ObservableObject {
 
     @Published var audioEnabled = false
     @Published var audioLevel: Float = 0
+    @Published var audioStreamActive = false
 
     @Published var supportsMotor = false
     @Published var supportsLed = false
@@ -60,15 +141,28 @@ final class KinectManager: ObservableObject {
     @Published var supportsIr = false
 
     @Published var publishToSystem = false
+    @Published var systemAudioHalInstalled = false
+    @Published var systemCameraDalInstalled = false
     @Published var systemPublishNote = "Not active"
     @Published var systemIntegrationInstallInProgress = false
     @Published var systemIntegrationInstallResult = ""
     @Published var lastCapturePath = ""
     @Published var lastCapturePointCount = 0
+    @Published var scannerBusy = false
+
+    @Published var stillImageFormat: StillImageFormat = .jpeg
+    @Published var stillImageQuality = 0.92
+    @Published var videoQualityPreset: VideoQualityPreset = .medium
+    @Published var isRecordingVideo = false
+    @Published var recordingVideoSeconds: Double = 0
+    @Published var lastVideoPath = ""
 
     private var bridge: KinectBridge?
     private var currentDevice: KinectDeviceRecord?
     private var lastFrame: KinectFrame?
+    private var videoRecorder: PreviewMovieRecorder?
+    private var recordingStreamType: KinectStreamType?
+    private var videoRecordStartDate: Date?
     private let systemAudioHalDisplayName = "KinectAudioHAL.driver"
     private let systemCameraDalDisplayName = "KinectCameraDAL.plugin"
     private let systemAudioHalPath = "/Library/Audio/Plug-Ins/HAL/KinectAudioHAL.driver"
@@ -127,16 +221,20 @@ final class KinectManager: ObservableObject {
 
         connected = true
         currentDevice = selected
+        lastFrame = nil
         status = "Connected to \(selected.generationLabel) \(selected.serial)"
         applyCurrentSettings()
         updateCapabilities()
+        refreshAudioRuntimeState()
     }
 
     func disconnect() {
+        stopVideoRecording()
         bridge?.stopStream()
         connected = false
         streaming = false
-        audioEnabled = false
+        audioStreamActive = false
+        audioLevel = 0
         currentDevice = nil
         lastFrame = nil
         status = "Disconnected."
@@ -149,22 +247,36 @@ final class KinectManager: ObservableObject {
         }
         bridge?.startStream()
         streaming = bridge?.isStreaming() ?? false
-        status = streaming ? "Streaming started." : "Could not start stream."
+        if streaming {
+            if audioEnabled && supportsAudioInput {
+                _ = bridge?.setAudioEnabled(true)
+            }
+            refreshAudioRuntimeState()
+            status = "Streaming started."
+        } else {
+            refreshAudioRuntimeState()
+            status = "Could not start stream."
+        }
     }
 
     func stopStreaming() {
+        stopVideoRecording()
         bridge?.stopStream()
         streaming = false
+        refreshAudioRuntimeState()
         status = "Streaming stopped."
     }
 
     func pollFrame() -> KinectFrame? {
-        guard streaming else { return nil }
+        guard streaming else {
+            refreshAudioRuntimeState()
+            return nil
+        }
         let frame = bridge?.pollFrame()
         if let frame {
             lastFrame = frame
         }
-        audioLevel = bridge?.audioLevel() ?? 0
+        refreshAudioRuntimeState()
         return frame
     }
 
@@ -222,9 +334,28 @@ final class KinectManager: ObservableObject {
     }
 
     func setAudioEnabled(_ value: Bool) {
+        guard supportsAudioInput else {
+            audioEnabled = false
+            audioStreamActive = false
+            status = "Kinect microphone input is not available for this device/backend."
+            return
+        }
+
+        audioEnabled = value
         let applied = bridge?.setAudioEnabled(value) ?? false
-        audioEnabled = applied
-        status = applied ? "Audio enabled." : "Audio unavailable on this device/session."
+        refreshAudioRuntimeState()
+
+        if value {
+            if !connected {
+                status = "Connect a device first to enable audio."
+            } else if streaming {
+                status = applied ? "Microphone stream enabled." : "Microphone could not start in this session."
+            } else {
+                status = "Microphone armed. Start streaming to activate audio."
+            }
+        } else {
+            status = "Microphone stream disabled."
+        }
     }
 
     func setSystemPublish(_ value: Bool) {
@@ -289,6 +420,9 @@ final class KinectManager: ObservableObject {
         let bundledAudioHalAvailable = fileManager.fileExists(atPath: bundledAudioHalPath)
         let installedAudioHalAvailable = fileManager.fileExists(atPath: systemAudioHalPath)
         let installedCameraPluginAvailable = fileManager.fileExists(atPath: systemCameraPluginPath)
+
+        systemAudioHalInstalled = installedAudioHalAvailable
+        systemCameraDalInstalled = installedCameraPluginAvailable
 
         let hasAnySystemIntegration = installedAudioHalAvailable || installedCameraPluginAvailable
         publishToSystem = requestEnable && hasAnySystemIntegration
@@ -408,7 +542,131 @@ fi
         return PrivilegedInstallResult(success: true, message: "System integration installed. You can now enable system publish.")
     }
 
+    private func refreshAudioRuntimeState() {
+        let active = bridge?.audioEnabled() ?? false
+        audioStreamActive = active
+        audioLevel = active ? (bridge?.audioLevel() ?? 0) : 0
+    }
+
+    func captureStillImage(_ image: CGImage, streamType: KinectStreamType) {
+        do {
+            let captureDir = captureRootDirectory().appendingPathComponent(Self.captureTimestamp(), isDirectory: true)
+            try FileManager.default.createDirectory(at: captureDir, withIntermediateDirectories: true)
+
+            let fileName = "still-\(streamType.fileNameComponent).\(stillImageFormat.fileExtension)"
+            let fileURL = captureDir.appendingPathComponent(fileName)
+            try writeStillImage(image, to: fileURL, format: stillImageFormat, quality: stillImageQuality)
+
+            lastCapturePath = captureDir.path
+            status = "Image captured: \(fileURL.lastPathComponent)"
+        } catch {
+            status = "Image capture failed: \(error.localizedDescription)"
+        }
+    }
+
+    func startVideoRecording(_ image: CGImage, streamType: KinectStreamType) {
+        guard connected, streaming else {
+            status = "Connect and start streaming before recording video."
+            return
+        }
+        guard !isRecordingVideo else {
+            status = "Video recording is already in progress."
+            return
+        }
+
+        do {
+            let captureDir = captureRootDirectory().appendingPathComponent(Self.captureTimestamp(), isDirectory: true)
+            try FileManager.default.createDirectory(at: captureDir, withIntermediateDirectories: true)
+
+            let fileURL = captureDir.appendingPathComponent("video-\(streamType.fileNameComponent).mov")
+            let recorder = try PreviewMovieRecorder(
+                outputURL: fileURL,
+                width: image.width,
+                height: image.height,
+                qualityPreset: videoQualityPreset
+            )
+
+            guard recorder.appendFrame(image) else {
+                throw NSError(domain: "KinectManager", code: 2001, userInfo: [NSLocalizedDescriptionKey: "Could not write the first video frame"])
+            }
+
+            videoRecorder = recorder
+            recordingStreamType = streamType
+            videoRecordStartDate = Date()
+            recordingVideoSeconds = 0
+            isRecordingVideo = true
+            lastVideoPath = fileURL.path
+            lastCapturePath = captureDir.path
+            status = "Recording \(streamType.title) video (\(videoQualityPreset.title))."
+        } catch {
+            status = "Video recording failed to start: \(error.localizedDescription)"
+        }
+    }
+
+    func appendPreviewFrameForRecording(_ image: CGImage, streamType: KinectStreamType) {
+        guard isRecordingVideo else { return }
+        guard recordingStreamType == streamType else { return }
+        guard let videoRecorder else { return }
+
+        if videoRecorder.appendFrame(image) {
+            if let videoRecordStartDate {
+                recordingVideoSeconds = Date().timeIntervalSince(videoRecordStartDate)
+            }
+        }
+    }
+
+    func stopVideoRecording() {
+        guard let recorder = videoRecorder else {
+            isRecordingVideo = false
+            recordingStreamType = nil
+            videoRecordStartDate = nil
+            recordingVideoSeconds = 0
+            return
+        }
+
+        let outputPath = recorder.outputURL.path
+        videoRecorder = nil
+        isRecordingVideo = false
+        recordingStreamType = nil
+        videoRecordStartDate = nil
+
+        recorder.finish { [weak self] error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.recordingVideoSeconds = 0
+                if let error {
+                    self.status = "Video recording failed: \(error.localizedDescription)"
+                } else {
+                    self.lastVideoPath = outputPath
+                    self.status = "Video saved: \((outputPath as NSString).lastPathComponent)"
+                }
+            }
+        }
+    }
+
+    private func writeStillImage(_ image: CGImage, to url: URL, format: StillImageFormat, quality: Double) throws {
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, format.utType.identifier as CFString, 1, nil) else {
+            throw NSError(domain: "KinectManager", code: 2002, userInfo: [NSLocalizedDescriptionKey: "Could not create image destination"])
+        }
+
+        let options: [CFString: Any]
+        if format.supportsQuality {
+            options = [kCGImageDestinationLossyCompressionQuality: min(max(quality, 0.05), 1.0)]
+        } else {
+            options = [:]
+        }
+
+        CGImageDestinationAddImage(destination, image, options as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            throw NSError(domain: "KinectManager", code: 2003, userInfo: [NSLocalizedDescriptionKey: "Could not finalize image file"])
+        }
+    }
+
     func captureScanBundle() {
+        guard !scannerBusy else {
+            status = "3D scanner capture already in progress."
+            return
+        }
         guard connected else {
             status = "Connect a device first."
             return
@@ -420,8 +678,13 @@ fi
         }
         lastFrame = frame
 
+        // Copy frame payloads immediately so scanning is not dependent on bridge object lifetimes.
+        let rgbData = Data(frame.rgbData)
+        let depthData = Data(frame.depthData)
+        let irData = Data(frame.irData)
         let width = frame.width
         let height = frame.height
+        let generation = currentDevice?.generation ?? 1
         guard width > 0, height > 0 else {
             status = "Invalid frame dimensions."
             return
@@ -433,44 +696,54 @@ fi
         let expectedIrBytes = pixelCount
 
         let captureDir = captureRootDirectory().appendingPathComponent(Self.captureTimestamp(), isDirectory: true)
+        scannerBusy = true
+        status = "Capturing 3D scan..."
 
-        do {
-            try FileManager.default.createDirectory(at: captureDir, withIntermediateDirectories: true)
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try FileManager.default.createDirectory(at: captureDir, withIntermediateDirectories: true)
 
-            var wroteColor = false
-            var wroteDepth = false
-            var wroteIr = false
-            var points = 0
+                var wroteColor = false
+                var wroteDepth = false
+                var wroteIr = false
+                var points = 0
 
-            if frame.rgbData.count >= expectedRgbBytes {
-                try writeColorPPM(frame.rgbData, width: width, height: height, to: captureDir.appendingPathComponent("color.ppm"))
-                wroteColor = true
+                if rgbData.count >= expectedRgbBytes {
+                    try self.writeColorPPM(rgbData, width: width, height: height, to: captureDir.appendingPathComponent("color.ppm"))
+                    wroteColor = true
+                }
+
+                if depthData.count >= expectedDepthBytes {
+                    try self.writeDepthPGM(depthData, width: width, height: height, to: captureDir.appendingPathComponent("depth_mm.pgm"))
+                    wroteDepth = true
+                    points = try self.writePointCloudPLY(
+                        depthData: depthData,
+                        rgbData: rgbData,
+                        irData: irData,
+                        width: width,
+                        height: height,
+                        generation: generation,
+                        to: captureDir.appendingPathComponent("scan.ply")
+                    )
+                }
+
+                if irData.count >= expectedIrBytes {
+                    try self.writeIrPGM(irData, width: width, height: height, to: captureDir.appendingPathComponent("infrared.pgm"))
+                    wroteIr = true
+                }
+
+                DispatchQueue.main.async {
+                    self.scannerBusy = false
+                    self.lastCapturePath = captureDir.path
+                    self.lastCapturePointCount = points
+                    self.status = "Capture saved (\(wroteColor ? "RGB" : "-")/\(wroteDepth ? "Depth" : "-")/\(wroteIr ? "IR" : "-"), points: \(points)"
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.scannerBusy = false
+                    self.status = "Capture failed: \(error.localizedDescription)"
+                }
             }
-
-            if frame.depthData.count >= expectedDepthBytes {
-                try writeDepthPGM(frame.depthData, width: width, height: height, to: captureDir.appendingPathComponent("depth_mm.pgm"))
-                wroteDepth = true
-                points = try writePointCloudPLY(
-                    depthData: frame.depthData,
-                    rgbData: frame.rgbData,
-                    irData: frame.irData,
-                    width: width,
-                    height: height,
-                    generation: currentDevice?.generation ?? 1,
-                    to: captureDir.appendingPathComponent("scan.ply")
-                )
-            }
-
-            if frame.irData.count >= expectedIrBytes {
-                try writeIrPGM(frame.irData, width: width, height: height, to: captureDir.appendingPathComponent("infrared.pgm"))
-                wroteIr = true
-            }
-
-            lastCapturePath = captureDir.path
-            lastCapturePointCount = points
-            status = "Capture saved (\(wroteColor ? "RGB" : "-")/\(wroteDepth ? "Depth" : "-")/\(wroteIr ? "IR" : "-"), points: \(points)"
-        } catch {
-            status = "Capture failed: \(error.localizedDescription)"
         }
     }
 

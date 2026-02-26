@@ -3,9 +3,9 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @interface KinectFrame : NSObject
-@property (nonatomic, readonly) NSData *rgbData;
-@property (nonatomic, readonly) NSData *depthData;
-@property (nonatomic, readonly) NSData *irData;
+@property (nonatomic, copy, readonly) NSData *rgbData;
+@property (nonatomic, copy, readonly) NSData *depthData;
+@property (nonatomic, copy, readonly) NSData *irData;
 @property (nonatomic, readonly) NSInteger width;
 @property (nonatomic, readonly) NSInteger height;
 @property (nonatomic, readonly) NSTimeInterval timestamp;
