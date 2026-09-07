@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import math
 import random
 import subprocess
 import tempfile
@@ -43,26 +42,23 @@ def blur_ellipse(size: int, bounds: tuple[int, int, int, int], fill: tuple[int, 
     return layer.filter(ImageFilter.GaussianBlur(radius))
 
 
-def build_icon() -> Image.Image:
-    image = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-
-    # macOS will mask the icon, but keeping the artwork inside a rounded square
-    # helps it read cleanly in Finder, Launchpad, and the Dock.
+def _create_background() -> Image.Image:
     tile_mask = Image.new("L", (SIZE, SIZE), 0)
     tile_draw = ImageDraw.Draw(tile_mask)
     tile_draw.rounded_rectangle((44, 44, SIZE - 44, SIZE - 44), radius=228, fill=255)
-
     background = build_vertical_gradient(SIZE, (6, 19, 33), (18, 55, 79))
     background.putalpha(tile_mask)
-    image.alpha_composite(background)
+    layer = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    layer.alpha_composite(background)
+    layer.alpha_composite(blur_ellipse(SIZE, (180, 100, 860, 700), (52, 210, 255, 120), 110))
+    layer.alpha_composite(blur_ellipse(SIZE, (120, 520, 900, 980), (255, 146, 64, 52), 150))
+    layer.alpha_composite(blur_ellipse(SIZE, (90, 860, 934, 1030), (8, 12, 20, 200), 55))
+    return layer
 
-    image.alpha_composite(blur_ellipse(SIZE, (180, 100, 860, 700), (52, 210, 255, 120), 110))
-    image.alpha_composite(blur_ellipse(SIZE, (120, 520, 900, 980), (255, 146, 64, 52), 150))
-    image.alpha_composite(blur_ellipse(SIZE, (90, 860, 934, 1030), (8, 12, 20, 200), 55))
 
+def _create_scan_grid() -> Image.Image:
     detail = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(detail)
-
     # Subtle scanning grid in the lower half keeps the icon tied to depth/scan
     # output without overpowering the Kinect silhouette at small sizes.
     for i in range(8):
@@ -72,29 +68,33 @@ def build_icon() -> Image.Image:
     for i in range(9):
         x = 208 + i * 76
         draw.rounded_rectangle((x, 626, x + 2, 916), radius=2, fill=(105, 216, 255, 18))
+    return detail
 
+
+def _create_sensor_shadow() -> Image.Image:
     sensor_shadow = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    sensor_shadow_draw = ImageDraw.Draw(sensor_shadow)
-    sensor_shadow_draw.rounded_rectangle((174, 218, 850, 446), radius=110, fill=(0, 0, 0, 190))
-    sensor_shadow = sensor_shadow.filter(ImageFilter.GaussianBlur(26))
-    image.alpha_composite(sensor_shadow)
+    draw = ImageDraw.Draw(sensor_shadow)
+    draw.rounded_rectangle((174, 218, 850, 446), radius=110, fill=(0, 0, 0, 190))
+    return sensor_shadow.filter(ImageFilter.GaussianBlur(26))
 
+
+def _create_sensor() -> Image.Image:
     sensor = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    sensor_draw = ImageDraw.Draw(sensor)
-    sensor_draw.rounded_rectangle((184, 208, 840, 432), radius=108, fill=(17, 26, 36, 255))
-    sensor_draw.rounded_rectangle((194, 218, 830, 286), radius=72, fill=(38, 56, 76, 190))
-    sensor_draw.rounded_rectangle((192, 218, 832, 430), radius=108, outline=(128, 227, 255, 150), width=4)
-    sensor = sensor.filter(ImageFilter.GaussianBlur(0.4))
-    image.alpha_composite(sensor)
+    draw = ImageDraw.Draw(sensor)
+    draw.rounded_rectangle((184, 208, 840, 432), radius=108, fill=(17, 26, 36, 255))
+    draw.rounded_rectangle((194, 218, 830, 286), radius=72, fill=(38, 56, 76, 190))
+    draw.rounded_rectangle((192, 218, 832, 430), radius=108, outline=(128, 227, 255, 150), width=4)
+    return sensor.filter(ImageFilter.GaussianBlur(0.4))
 
-    # Depth beam and point cloud.
+
+def _create_beam() -> Image.Image:
     beam = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    beam_draw = ImageDraw.Draw(beam)
-    beam_draw.polygon(
+    draw = ImageDraw.Draw(beam)
+    draw.polygon(
         [(420, 410), (604, 410), (780, 820), (244, 820)],
         fill=(74, 232, 255, 54),
     )
-    beam_draw.polygon(
+    draw.polygon(
         [(448, 430), (576, 430), (690, 762), (334, 762)],
         fill=(15, 190, 255, 54),
     )
@@ -103,51 +103,69 @@ def build_icon() -> Image.Image:
         left = 436 - int(t * 148)
         right = 588 + int(t * 148)
         y = 432 + int(t * 320)
-        beam_draw.line((left, y, right, y), fill=(154, 239, 255, 85), width=3)
-    beam = beam.filter(ImageFilter.GaussianBlur(6))
-    image.alpha_composite(beam)
+        draw.line((left, y, right, y), fill=(154, 239, 255, 85), width=3)
+    return beam.filter(ImageFilter.GaussianBlur(6))
 
+
+def _point_position(col: int, columns: int, span: int, rng: random.Random) -> int:
+    if columns == 1:
+        x = 512
+    else:
+        x = int(512 - span + (2 * span) * (col / (columns - 1)))
+    return x + rng.randint(-8, 8)
+
+
+def _create_point_cloud() -> Image.Image:
     rng = random.Random(42)
     points = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    points_draw = ImageDraw.Draw(points)
+    draw = ImageDraw.Draw(points)
     for row in range(9):
         t = row / 8.0
         y = 470 + int(t * 290)
         span = 70 + int(t * 250)
         columns = 5 + row * 2
-        for col in range(columns):
-            if columns == 1:
-                x = 512
-            else:
-                x = int(512 - span + (2 * span) * (col / (columns - 1)))
-            x += rng.randint(-8, 8)
+        for col in range(columns):  # skylos: ignore[SKY-P403]
+            x = _point_position(col, columns, span, rng)
             y_offset = rng.randint(-6, 6)
             radius = 7 if row < 3 else 6
             color = (255, 170, 82, 220) if (row + col) % 3 == 0 else (132, 236, 255, 210)
-            points_draw.ellipse((x - radius, y + y_offset - radius, x + radius, y + y_offset + radius), fill=color)
-    points = points.filter(ImageFilter.GaussianBlur(0.4))
-    image.alpha_composite(points)
+            draw.ellipse((x - radius, y + y_offset - radius, x + radius, y + y_offset + radius), fill=color)
+    return points.filter(ImageFilter.GaussianBlur(0.4))
 
-    lens_glow = blur_ellipse(SIZE, (388, 216, 636, 438), (73, 228, 255, 140), 24)
-    image.alpha_composite(lens_glow)
-    image.alpha_composite(blur_ellipse(SIZE, (228, 256, 380, 404), (164, 235, 255, 65), 18))
-    image.alpha_composite(blur_ellipse(SIZE, (646, 256, 798, 404), (164, 235, 255, 65), 18))
 
+def _create_lens_glow() -> Image.Image:
+    layer = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    layer.alpha_composite(blur_ellipse(SIZE, (388, 216, 636, 438), (73, 228, 255, 140), 24))
+    layer.alpha_composite(blur_ellipse(SIZE, (228, 256, 380, 404), (164, 235, 255, 65), 18))
+    layer.alpha_composite(blur_ellipse(SIZE, (646, 256, 798, 404), (164, 235, 255, 65), 18))
+    return layer
+
+
+def _create_lens_layer() -> Image.Image:
     lens_layer = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    lens_draw = ImageDraw.Draw(lens_layer)
-    lens_draw.ellipse((416, 244, 608, 436), fill=(8, 18, 26, 255), outline=(168, 244, 255, 255), width=8)
-    lens_draw.ellipse((452, 280, 572, 400), fill=(18, 153, 198, 255), outline=(212, 252, 255, 220), width=5)
-    lens_draw.ellipse((486, 314, 538, 366), fill=(242, 253, 255, 255))
-
+    draw = ImageDraw.Draw(lens_layer)
+    draw.ellipse((416, 244, 608, 436), fill=(8, 18, 26, 255), outline=(168, 244, 255, 255), width=8)
+    draw.ellipse((452, 280, 572, 400), fill=(18, 153, 198, 255), outline=(212, 252, 255, 220), width=5)
+    draw.ellipse((486, 314, 538, 366), fill=(242, 253, 255, 255))
     for bounds in ((248, 270, 354, 376), (670, 270, 776, 376)):
-        lens_draw.ellipse(bounds, fill=(12, 18, 27, 255), outline=(200, 229, 240, 210), width=5)
+        draw.ellipse(bounds, fill=(12, 18, 27, 255), outline=(200, 229, 240, 210), width=5)
         inset = (bounds[0] + 19, bounds[1] + 19, bounds[2] - 19, bounds[3] - 19)
-        lens_draw.ellipse(inset, fill=(98, 126, 145, 255))
+        draw.ellipse(inset, fill=(98, 126, 145, 255))
+    draw.ellipse((786, 292, 816, 322), fill=(255, 149, 58, 255))
+    draw.rounded_rectangle((350, 232, 674, 252), radius=10, fill=(255, 255, 255, 48))
+    return lens_layer
 
-    lens_draw.ellipse((786, 292, 816, 322), fill=(255, 149, 58, 255))
-    lens_draw.rounded_rectangle((350, 232, 674, 252), radius=10, fill=(255, 255, 255, 48))
-    image.alpha_composite(lens_layer)
 
+def build_icon() -> Image.Image:
+    image = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    image.alpha_composite(_create_background())
+    image.alpha_composite(_create_scan_grid())
+    image.alpha_composite(_create_sensor_shadow())
+    image.alpha_composite(_create_sensor())
+    image.alpha_composite(_create_beam())
+    image.alpha_composite(_create_point_cloud())
+    image.alpha_composite(_create_lens_glow())
+    image.alpha_composite(_create_lens_layer())
     return image
 
 
@@ -183,8 +201,8 @@ def main() -> None:
             check=True,
         )
 
-    print(f"wrote {MASTER_PNG}")
-    print(f"wrote {OUTPUT_ICNS}")
+    print(f"wrote {MASTER_PNG}")  # skylos: ignore[SKY-L009]
+    print(f"wrote {OUTPUT_ICNS}")  # skylos: ignore[SKY-L009]
 
 
 if __name__ == "__main__":

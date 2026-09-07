@@ -1,0 +1,83 @@
+[project]
+name = "mackinect"
+version = "2.0.0"
+description = "Native macOS control center for Microsoft Kinect v1/v2"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=10.0",
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.10"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "C90", "I", "N", "UP", "S", "B", "A", "C4", "TCH", "TID", "Q", "RUF"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.skylos]
+complexity = 10
+nesting = 3
+max_args = 5
+max_lines = 50
+god_file_max_lines = 500
+god_file_max_definitions = 40
+god_file_max_top_level_definitions = 25
+duplicate_strings = 3
+exclude = []
+ignore = []
+
+[tool.skylos.masking]
+names = []
+decorators = []
+bases = []
+
+[tool.skylos.dead_code]
+entrypoints = []
+
+[tool.skylos.templates]
+# security = ".skylos/templates/security.md"
+# quality = ".skylos/templates/quality.md"
+
+[tool.skylos.vibe]
+extra_phantom_names = []
+extra_phantom_decorators = []
+extra_credential_names = []
+extra_sensitive_file_keywords = []
+extra_network_timeout_calls = []
+
+[tool.skylos.architecture]
+strict = false
+enforce_iad = false
+
+[tool.skylos.whitelist]
+names = []
+
+[tool.skylos.whitelist.documented]
+
+[tool.skylos.whitelist.temporary]
+
+[tool.skylos.gate]
+fail_on_critical = true
+max_critical = 0
+max_high = 5
+max_security = 0
+max_reliability = 0
+max_quality = 10
+strict = false

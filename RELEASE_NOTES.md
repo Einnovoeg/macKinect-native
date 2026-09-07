@@ -2,13 +2,14 @@
 
 ## macKinect 2.0
 
-Release date: 2026-09-05
+Release date: 2026-09-07
 
 ### Highlights
 
 - **OBS full-frame streaming:** Virtual Camera now streams the complete Kinect frame at 1920×1080 with scale-inner rendering; no cropping or black bars; `launchOBSVirtualCamera` uses `--startvirtualcam` for auto-start
 - **Control Center prominence:** `Launch OBS Virtual Camera` and microphone toggle moved to Control tab as always-visible prominent cards; System 4-button row split to prevent overflow; no Settings menu (12-line `WindowGroup`)
 - **UI alignment:** `infoTile` flexible width prevents left-edge clipping; badge wrapping prevents overflow; System row split into two `HStack` rows
+- **Code quality grade A+ (100/100):** Fixed Skylos quality gate — `build_icon` refactored, unused import removed, repo policies added (`mypy`, `ruff`, `skylos.gate`, `pre-commit`)
 
 ### What changed in 2.0
 
@@ -16,7 +17,9 @@ Release date: 2026-09-05
 - `ContentView.swift`: Restored polished 724f671 layout; `obsProminentCard` + `micProminentCard` fixed above `ScrollView` in Control; `infoTile` flexible width; System 4-button row split; no Settings scene
 - `KinectApp.swift`: Kept at 12 lines, no Settings duplicate
 - `OBSSyphonPublisher.mm`: Vertical flip preserved for right-side-up frames
-- `VERSION`: `1.1.1` → `2.0.0`
+- `resources/generate_app_icon.py`: Removed `math` import; split 106-line `build_icon` into 8 helpers (`_create_background`, `_create_scan_grid`, `_create_sensor_shadow`, `_create_sensor`, `_create_beam`, `_create_point_cloud`, `_create_lens_glow`, `_create_lens_layer`); suppressed intentional `SKY-P403` nested-loop and `SKY-L009` prints
+- `pyproject.toml` / `.pre-commit-config.yaml`: Added `mypy`, `ruff`, `skylos.gate`, `pre-commit` policies for `SKY-R101`–`SKY-R104`
+- `VERSION`: `1.1.1` → `2.0.0`; `pyproject.toml` version `1.1.0` → `2.0.0`
 
 ### Verification summary
 

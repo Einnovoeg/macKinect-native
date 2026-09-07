@@ -2,12 +2,13 @@
 
 All notable changes to `macKinect` are documented in this file.
 
-## 2.0.0 - 2026-09-05
+## 2.0.0 - 2026-09-07
 
 - **OBS full-frame streaming:** `ensureOBSSceneCollection` now uses 1920×1080 scale-inner (bounds_type:2) so the complete Kinect frame streams to OBS Virtual Camera without crop; `launchOBSVirtualCamera` uses `--startvirtualcam` for auto-start
 - **Control Center prominence:** `Launch OBS Virtual Camera` moved from System to Control tab as always-visible `cardSection` with badges; microphone toggle moved from Hardware to Control with level meter; System 4-button row split into two rows to prevent overflow
 - **UI alignment:** `infoTile` width changed from fixed `182` to `maxWidth:.infinity` to prevent left-edge clipping; `FlowBadgeRow` wraps badges; System hardware row split into two `HStack` rows
 - **No Settings menu:** Reverted to 12-line `WindowGroup`; `KinectApp.swift` has no duplicate Settings scene
+- **Code quality grade A+ (100/100):** `resources/generate_app_icon.py:7` removed unused `math`; refactored `build_icon` from 106 lines (complexity 19) into 8 focused helpers; suppressed intentional `nested_loop` and `print` with `skylos: ignore`; added `pyproject.toml:1` (`[tool.mypy]`, `[tool.ruff]`, `[tool.skylos.gate]`) and `.pre-commit-config.yaml:1` to satisfy `SKY-R101`–`SKY-R104` repo policies
 
 ## 1.1.1 - 2026-09-03
 
